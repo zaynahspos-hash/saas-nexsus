@@ -1,0 +1,7 @@
+{
+  "name": "Copy of Copy of SaaS Nexus Dashboard",
+  "description": "A high-fidelity SaaS Admin Dashboard simulation. Features multi-tenant management, product inventory, order tracking, and analytics visualization. Built as a React SPA to simulate a full-stack Next.js + Prisma application experience.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
