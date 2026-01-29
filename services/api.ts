@@ -2,12 +2,20 @@ import axios from 'axios';
 
 // Dynamic API URL for Vercel/Production vs Localhost
 const getBaseUrl = () => {
+  let url = 'http://localhost:5000/api';
+
   // If we are in a Vite environment
   if ((import.meta as any).env && (import.meta as any).env.VITE_API_URL) {
-    return (import.meta as any).env.VITE_API_URL;
+    url = (import.meta as any).env.VITE_API_URL;
   }
-  // Fallback for local development
-  return 'http://localhost:5000/api';
+
+  // Render provides the base URL (e.g., https://app.onrender.com)
+  // We must ensure it ends with /api to match the backend routes
+  if (!url.endsWith('/api')) {
+    url = `${url}/api`;
+  }
+
+  return url;
 };
 
 export const api = axios.create({

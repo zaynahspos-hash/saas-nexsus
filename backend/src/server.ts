@@ -18,7 +18,7 @@ configureCloudinary();
 const app = express();
 
 // Middleware
-app.use(helmet() as express.RequestHandler);
+app.use(helmet());
 
 // Dynamic CORS Configuration
 const allowedOrigins = [
@@ -50,8 +50,8 @@ app.use(cors({
     credentials: true
 }));
 
-app.use(express.json() as express.RequestHandler);
-app.use(express.urlencoded({ extended: false }) as express.RequestHandler);
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
 
 // Routes
 app.get('/', (req: any, res: any) => {
