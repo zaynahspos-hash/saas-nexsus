@@ -1,46 +1,53 @@
 import { User, Tenant } from '../types';
-import { mockDb } from './mockDb';
-import { emailService } from './emailService';
+import { api } from './api';
 
-/**
- * Simulates NextAuth.js backend logic on the client.
- */
 export const authService = {
   login: async (email: string, password: string): Promise<{ user: User; tenant: Tenant }> => {
-    // In a real app, we would verify password hash here.
-    const result = await mockDb.authenticate(email, password);
+    const response = await api.post('/auth/login', { email, password });
     
-    if (!result) {
-      throw new Error('Invalid credentials');
+    if (response.data.token) {
+      localStorage.setItem('shopgenius_token', response.data.token);
     }
     
-    // Trigger Security Alert Email (Async)
-    emailService.sendLoginAlert(email, result.tenant.id);
-
-    // Simulate setting a session token
-    localStorage.setItem('saas_nexus_token', 'mock_token_' + result.user.id);
-    return result;
+    return {
+        user: response.data.user,
+        tenant: response.data.tenant
+    };
   },
 
   signup: async (name: string, email: string, password: string, companyName: string): Promise<{ user: User; tenant: Tenant }> => {
-    const result = await mockDb.registerTenant(companyName, name, email);
-    
-    // Trigger Welcome Email
-    emailService.sendWelcomeEmail(email, name);
+    const response = await api.post('/auth/signup', { 
+        name, 
+        email, 
+        password, 
+        companyName,
+        adminName: name
+    });
 
-    localStorage.setItem('saas_nexus_token', 'mock_token_' + result.user.id);
-    return result;
+    if (response.data.token) {
+      localStorage.setItem('shopgenius_token', response.data.token);
+    }
+
+    return {
+        user: response.data.user,
+        tenant: response.data.tenant
+    };
   },
 
   logout: async () => {
-    localStorage.removeItem('saas_nexus_token');
+    localStorage.removeItem('shopgenius_token');
     return Promise.resolve();
   },
 
+  // Verify token
   checkSession: async (): Promise<{ user: User; tenant: Tenant } | null> => {
-    const token = localStorage.getItem('saas_nexus_token');
+    const token = localStorage.getItem('shopgenius_token');
     if (!token) return null;
-    // Simple mock validation
-    return null; 
+    try {
+        const response = await api.get('/auth/me');
+        return response.data;
+    } catch (e) {
+        return null;
+    }
   }
 };

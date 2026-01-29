@@ -2,7 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/authMiddleware';
 import { Settings, Tenant, Order, Product, Customer } from '../models/Schemas';
 
-export const getSettings = async (req: AuthRequest, res: Response) => {
+export const getSettings = async (req: any, res: any) => {
   let settings = await Settings.findOne({ tenantId: req.user.tenantId });
   if (!settings) {
     settings = await Settings.create({ tenantId: req.user.tenantId });
@@ -10,7 +10,7 @@ export const getSettings = async (req: AuthRequest, res: Response) => {
   res.json(settings);
 };
 
-export const updateSettings = async (req: AuthRequest, res: Response) => {
+export const updateSettings = async (req: any, res: any) => {
   const settings = await Settings.findOneAndUpdate(
     { tenantId: req.user.tenantId },
     req.body,
@@ -19,7 +19,7 @@ export const updateSettings = async (req: AuthRequest, res: Response) => {
   res.json(settings);
 };
 
-export const updateTenantProfile = async (req: AuthRequest, res: Response) => {
+export const updateTenantProfile = async (req: any, res: any) => {
   const tenant = await Tenant.findByIdAndUpdate(
     req.user.tenantId,
     req.body,
@@ -29,7 +29,7 @@ export const updateTenantProfile = async (req: AuthRequest, res: Response) => {
 };
 
 // Dashboard Stats Aggregation
-export const getDashboardStats = async (req: AuthRequest, res: Response) => {
+export const getDashboardStats = async (req: any, res: any) => {
     try {
         const tenantId = req.user.tenantId;
         

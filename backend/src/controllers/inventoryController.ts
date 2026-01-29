@@ -3,7 +3,7 @@ import { AuthRequest } from '../middleware/authMiddleware';
 import { Product, Category, StockLog } from '../models/Schemas';
 
 // --- Products ---
-export const getProducts = async (req: AuthRequest, res: Response) => {
+export const getProducts = async (req: any, res: any) => {
   try {
     const products = await Product.find({ tenantId: req.user.tenantId });
     res.json(products);
@@ -12,7 +12,7 @@ export const getProducts = async (req: AuthRequest, res: Response) => {
   }
 };
 
-export const createProduct = async (req: AuthRequest, res: Response) => {
+export const createProduct = async (req: any, res: any) => {
   try {
     const product = await Product.create({ ...req.body, tenantId: req.user.tenantId });
     res.status(201).json(product);
@@ -21,7 +21,7 @@ export const createProduct = async (req: AuthRequest, res: Response) => {
   }
 };
 
-export const updateProduct = async (req: AuthRequest, res: Response) => {
+export const updateProduct = async (req: any, res: any) => {
   try {
     const product = await Product.findOneAndUpdate(
       { _id: req.params.id, tenantId: req.user.tenantId },
@@ -35,7 +35,7 @@ export const updateProduct = async (req: AuthRequest, res: Response) => {
   }
 };
 
-export const deleteProduct = async (req: AuthRequest, res: Response) => {
+export const deleteProduct = async (req: any, res: any) => {
   try {
     const product = await Product.findOneAndDelete({ _id: req.params.id, tenantId: req.user.tenantId });
     if (!product) return res.status(404).json({ message: 'Product not found' });
@@ -46,7 +46,7 @@ export const deleteProduct = async (req: AuthRequest, res: Response) => {
 };
 
 // --- Categories ---
-export const getCategories = async (req: AuthRequest, res: Response) => {
+export const getCategories = async (req: any, res: any) => {
   try {
     const categories = await Category.find({ tenantId: req.user.tenantId });
     res.json(categories);
@@ -55,7 +55,7 @@ export const getCategories = async (req: AuthRequest, res: Response) => {
   }
 };
 
-export const createCategory = async (req: AuthRequest, res: Response) => {
+export const createCategory = async (req: any, res: any) => {
   try {
     const category = await Category.create({ ...req.body, tenantId: req.user.tenantId });
     res.status(201).json(category);
@@ -64,7 +64,7 @@ export const createCategory = async (req: AuthRequest, res: Response) => {
   }
 };
 
-export const deleteCategory = async (req: AuthRequest, res: Response) => {
+export const deleteCategory = async (req: any, res: any) => {
   try {
     await Category.findOneAndDelete({ _id: req.params.id, tenantId: req.user.tenantId });
     res.json({ message: 'Category removed' });
@@ -74,7 +74,7 @@ export const deleteCategory = async (req: AuthRequest, res: Response) => {
 };
 
 // --- Stock Logs ---
-export const getStockLogs = async (req: AuthRequest, res: Response) => {
+export const getStockLogs = async (req: any, res: any) => {
   try {
     const logs = await StockLog.find({ tenantId: req.user.tenantId }).sort({ createdAt: -1 }).limit(100);
     res.json(logs);

@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { User, Tenant, Settings, Role, SubscriptionTier } from '../models/Schemas';
+import { sendEmail } from '../utils/email';
 
 const generateToken = (id: string) => {
   return jwt.sign({ id }, process.env.JWT_SECRET || 'secret', {
@@ -9,7 +10,7 @@ const generateToken = (id: string) => {
   });
 };
 
-export const registerTenant = async (req: Request, res: Response) => {
+export const registerTenant = async (req: any, res: any) => {
   const { companyName, adminName, email, password } = req.body;
 
   if (!companyName || !adminName || !email || !password) {
@@ -48,6 +49,14 @@ export const registerTenant = async (req: Request, res: Response) => {
     // 4. Create Default Settings
     await Settings.create({ tenantId: tenant._id });
 
+    // 5. Send Welcome Email
+    await sendEmail({
+        to: email,
+        subject: 'Welcome to ShopGenius!',
+        text: `Hi ${adminName},\n\nThank you for registering ${companyName} with ShopGenius. Your account is now active.\n\nBest Regards,\nThe ShopGenius Team`,
+        html: `<h3>Welcome to ShopGenius!</h3><p>Hi ${adminName},</p><p>Thank you for registering <strong>${companyName}</strong>. Your account is now active.</p>`
+    });
+
     res.status(201).json({
       _id: user.id,
       name: user.name,
@@ -61,7 +70,7 @@ export const registerTenant = async (req: Request, res: Response) => {
   }
 };
 
-export const loginUser = async (req: Request, res: Response) => {
+export const loginUser = async (req: any, res: any) => {
   const { email, password } = req.body;
 
   const user: any = await User.findOne({ email });
@@ -71,6 +80,9 @@ export const loginUser = async (req: Request, res: Response) => {
     await Tenant.findByIdAndUpdate(user.tenantId, { lastActivityAt: new Date() });
 
     const tenant = await Tenant.findById(user.tenantId);
+
+    // Optional: Send Login Alert
+    // await sendEmail({ to: email, subject: 'New Login Detected', text: 'New login to your account.' });
 
     res.json({
       user: {
@@ -90,6 +102,6 @@ export const loginUser = async (req: Request, res: Response) => {
   }
 };
 
-export const getMe = async (req: any, res: Response) => {
+export const getMe = async (req: any, res: any) => {
   res.status(200).json({ user: req.user, tenant: req.tenant });
 };

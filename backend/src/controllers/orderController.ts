@@ -2,7 +2,7 @@ import { Response } from 'express';
 import { AuthRequest } from '../middleware/authMiddleware';
 import { Order, Product, StockLog, Customer } from '../models/Schemas';
 
-export const getOrders = async (req: AuthRequest, res: Response) => {
+export const getOrders = async (req: any, res: any) => {
   try {
     const orders = await Order.find({ tenantId: req.user.tenantId }).sort({ createdAt: -1 }).limit(200);
     res.json(orders);
@@ -11,7 +11,7 @@ export const getOrders = async (req: AuthRequest, res: Response) => {
   }
 };
 
-export const createOrder = async (req: AuthRequest, res: Response) => {
+export const createOrder = async (req: any, res: any) => {
   try {
     // 1. Create Order
     const order = await Order.create({ ...req.body, tenantId: req.user.tenantId });
@@ -64,7 +64,7 @@ export const createOrder = async (req: AuthRequest, res: Response) => {
   }
 };
 
-export const updateOrderStatus = async (req: AuthRequest, res: Response) => {
+export const updateOrderStatus = async (req: any, res: any) => {
     try {
         const { status } = req.body;
         const order = await Order.findOne({ _id: req.params.id, tenantId: req.user.tenantId });

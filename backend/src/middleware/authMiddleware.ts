@@ -10,7 +10,7 @@ export interface AuthRequest extends Request {
   params: any;
 }
 
-export const protect = async (req: AuthRequest, res: Response, next: NextFunction) => {
+export const protect = async (req: any, res: any, next: NextFunction) => {
   let token;
 
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
@@ -39,7 +39,7 @@ export const protect = async (req: AuthRequest, res: Response, next: NextFunctio
   }
 };
 
-export const adminOnly = (req: AuthRequest, res: Response, next: NextFunction) => {
+export const adminOnly = (req: any, res: any, next: NextFunction) => {
   if (req.user && (req.user.role === 'ADMIN' || req.user.role === 'SUPER_ADMIN')) {
     next();
   } else {

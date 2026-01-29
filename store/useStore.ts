@@ -1,8 +1,9 @@
 import { create } from 'zustand';
 import { AppState, Tenant, User, Product, Order, Role, TenantStatus, Category, StockLog, OrderStatus, Supplier, PurchaseOrder, Expense, PurchaseOrderStatus, Settings, Customer, Notification, SubscriptionRequest, Permission, TenantDetails } from '../types';
-import { mockDb } from '../services/mockDb';
+import { api } from '../services/api';
 import { authService } from '../services/authService';
 import { offlineService } from '../services/db';
+import { mockDb } from '../services/mockDb'; // Keep mock for Admin features not yet backed
 
 interface StoreActions {
   setTenant: (tenant: Tenant) => void;
@@ -23,7 +24,7 @@ interface StoreActions {
   
   // Order Actions
   refreshOrders: () => Promise<void>;
-  addOrder: (order: Partial<Order>) => Promise<Order>; // Updated return type
+  addOrder: (order: Partial<Order>) => Promise<Order>;
   updateOrderStatus: (id: string, status: OrderStatus) => Promise<void>;
 
   // User Actions
@@ -138,13 +139,11 @@ export const useStore = create<Store>((set, get) => ({
            
            // Push all pending orders to server
            for (const order of pending) {
-              await mockDb.createOrder(order); // Server updates its DB
+              await api.post('/orders', order); // Server updates its DB
               await offlineService.clearPendingOrder(order.id); // Clear local pending flag
            }
            
-           // Fetch fresh state to ensure consistency (Server -> Client)
-           // This handles updating stock counts from server's perspective, 
-           // overwriting our local optimistic updates with the 'official' state.
+           // Fetch fresh state to ensure consistency
            await get().loadInitialData();
            console.log('✅ Sync Complete');
         }
@@ -166,39 +165,54 @@ export const useStore = create<Store>((set, get) => ({
       // Populate store with local data immediately
       set({
         ...localData,
-        // Only set loading false if we have data, otherwise wait for network
         isLoading: localData.products.length === 0 
       });
 
-      // If Online, fetch fresh data from "Server" and update Cache
+      // If Online, fetch fresh data from Backend API
       if (navigator.onLine) {
-        // console.log('🌐 Online: Fetching fresh data...');
-        const tenants = await mockDb.getTenants(); 
-        const [products, orders, users, categories, stockLogs, suppliers, purchaseOrders, expenses, settings, customers, notifications, plans] = await Promise.all([
-          mockDb.getTenantProducts(currentTenant.id),
-          mockDb.getTenantOrders(currentTenant.id),
-          mockDb.getTenantUsers(currentTenant.id),
-          mockDb.getTenantCategories(currentTenant.id),
-          mockDb.getTenantStockLogs(currentTenant.id),
-          mockDb.getTenantSuppliers(currentTenant.id),
-          mockDb.getTenantPurchaseOrders(currentTenant.id),
-          mockDb.getTenantExpenses(currentTenant.id),
-          mockDb.getTenantSettings(currentTenant.id),
-          mockDb.getTenantCustomers(currentTenant.id),
-          mockDb.getTenantNotifications(currentTenant.id),
-          mockDb.getPlans()
+        // Parallel data fetching from Real API
+        const [
+            productsRes, ordersRes, usersRes, categoriesRes, stockLogsRes, 
+            suppliersRes, purchaseOrdersRes, expensesRes, settingsRes, customersRes
+        ] = await Promise.all([
+          api.get('/products'),
+          api.get('/orders'),
+          api.get('/users'),
+          api.get('/categories'),
+          api.get('/stock-logs'),
+          api.get('/suppliers'),
+          api.get('/purchase-orders'),
+          api.get('/expenses'),
+          api.get('/settings'),
+          api.get('/customers')
         ]);
+
+        const products = productsRes.data;
+        const orders = ordersRes.data;
+        const users = usersRes.data;
+        const categories = categoriesRes.data;
+        const stockLogs = stockLogsRes.data;
+        const suppliers = suppliersRes.data;
+        const purchaseOrders = purchaseOrdersRes.data;
+        const expenses = expensesRes.data;
+        const settings = settingsRes.data;
+        const customers = customersRes.data;
+        
+        // Mock data for things not yet on backend
+        const notifications = await mockDb.getTenantNotifications(currentTenant.id);
+        const plans = await mockDb.getPlans();
 
         // Update Store
         set({
-          tenants, products, orders, users, categories, stockLogs, suppliers,
+          products, orders, users, categories, stockLogs, suppliers,
           purchaseOrders, expenses, settings, customers, notifications, plans,
+          tenants: [currentTenant], // For now, single tenant view
           isLoading: false
         });
 
         // Update Local Cache with fresh server data
         await offlineService.cacheAllData({
-          tenants, products, orders, users, categories, stockLogs, suppliers,
+          products, orders, users, categories, stockLogs, suppliers,
           purchaseOrders, expenses, settings, customers, notifications
         });
 
@@ -237,7 +251,6 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   fetchTenantDetails: async (tenantId: string) => {
-      // Don't set global loading state to avoid flickering main dashboard
       return await mockDb.getTenantDetails(tenantId);
   },
 
@@ -248,30 +261,16 @@ export const useStore = create<Store>((set, get) => ({
 
   // Subscription Request Handling
   submitSubscriptionProof: async (planId, planName, amount, proofFile) => {
-    const { currentTenant } = get();
-    if (!currentTenant) return;
-
-    // Simulate Cloudinary Upload
-    const fakeUpload = () => new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result as string);
-        reader.readAsDataURL(proofFile);
-    });
-
-    const proofUrl = await fakeUpload();
-
+    // Still mock for now
     await mockDb.createSubscriptionRequest({
-        tenantId: currentTenant.id,
-        tenantName: currentTenant.name,
+        tenantId: get().currentTenant!.id,
+        tenantName: get().currentTenant!.name,
         planId,
         planName,
         amount,
         paymentMethod: 'Manual Transfer',
-        proofUrl
+        proofUrl: URL.createObjectURL(proofFile)
     });
-
-    // Update local state to pending
-    set({ currentTenant: { ...currentTenant, subscriptionStatus: 'PENDING_APPROVAL' }});
   },
 
   approveSubscription: async (requestId) => {
@@ -287,37 +286,23 @@ export const useStore = create<Store>((set, get) => ({
   runRetentionPolicy: async () => {
       set({ isLoading: true });
       const result = await mockDb.runRetentionPolicy();
-      await get().loadAdminData(); // Refresh list to see deleted tenants gone
+      await get().loadAdminData(); 
       set({ isLoading: false });
       return result;
   },
 
   // Inventory Implementation
   refreshProducts: async () => {
-    const { currentTenant } = get();
-    if (!currentTenant) return;
-    
     if(navigator.onLine) {
-        const products = await mockDb.getTenantProducts(currentTenant.id);
-        set({ products });
-        offlineService.syncProducts(products);
-    } else {
-        // Reload from local cache to ensure consistency
-        const { products } = await offlineService.loadLocalState(currentTenant.id);
-        set({ products });
+        const res = await api.get('/products');
+        set({ products: res.data });
+        offlineService.syncProducts(res.data);
     }
   },
 
   addProduct: async (newProduct) => {
-    const { currentTenant } = get();
-    if (!currentTenant) return;
-    
-    // Optimistic update
-    const product = { ...newProduct, id: `p_${Date.now()}`, tenantId: currentTenant.id, createdAt: new Date().toISOString() } as Product;
-    set(state => ({ products: [...state.products, product] }));
-
     if(navigator.onLine) {
-       await mockDb.createProduct({ ...newProduct, tenantId: currentTenant.id });
+       await api.post('/products', newProduct);
        await get().refreshProducts();
        await get().refreshStockLogs(); 
     }
@@ -327,70 +312,47 @@ export const useStore = create<Store>((set, get) => ({
     set(state => ({
       products: state.products.map(p => p.id === id ? { ...p, ...updates } : p)
     }));
-    
     if(navigator.onLine) {
-        await mockDb.updateProduct(id, updates);
-        if (updates.stock !== undefined) {
-          await get().refreshStockLogs();
-        }
+        await api.put(`/products/${id}`, updates);
+        if (updates.stock !== undefined) await get().refreshStockLogs();
     }
   },
 
   deleteProduct: async (id) => {
     set(state => ({ products: state.products.filter(p => p.id !== id) }));
-    if(navigator.onLine) await mockDb.deleteProduct(id);
+    if(navigator.onLine) await api.delete(`/products/${id}`);
   },
 
   refreshCategories: async () => {
-    const { currentTenant } = get();
-    if (!currentTenant || !navigator.onLine) return;
-    const categories = await mockDb.getTenantCategories(currentTenant.id);
-    set({ categories });
+    if (!navigator.onLine) return;
+    const res = await api.get('/categories');
+    set({ categories: res.data });
   },
 
   addCategory: async (category) => {
-    const { currentTenant } = get();
-    if (!currentTenant) return;
-    // Optimistic
-    const newCat = { ...category, id: `c_${Date.now()}`, tenantId: currentTenant.id } as Category;
-    set(state => ({ categories: [...state.categories, newCat] }));
-    
-    if(navigator.onLine) await mockDb.createCategory({ ...category, tenantId: currentTenant.id });
+    if(navigator.onLine) {
+        const res = await api.post('/categories', category);
+        set(state => ({ categories: [...state.categories, res.data] }));
+    }
   },
 
   deleteCategory: async (id) => {
     set(state => ({ categories: state.categories.filter(c => c.id !== id) }));
-    if(navigator.onLine) await mockDb.deleteCategory(id);
+    if(navigator.onLine) await api.delete(`/categories/${id}`);
   },
 
   refreshStockLogs: async () => {
-    const { currentTenant } = get();
-    if (!currentTenant) return;
-    
     if (navigator.onLine) {
-       const stockLogs = await mockDb.getTenantStockLogs(currentTenant.id);
-       set({ stockLogs });
-    } else {
-       const { stockLogs } = await offlineService.loadLocalState(currentTenant.id);
-       set({ stockLogs });
+       const res = await api.get('/stock-logs');
+       set({ stockLogs: res.data });
     }
   },
 
   // Order Implementation
   refreshOrders: async () => {
-    const { currentTenant } = get();
-    if (!currentTenant) return;
-    
     if(navigator.onLine) {
-        const serverOrders = await mockDb.getTenantOrders(currentTenant.id);
-        const pending = await offlineService.getPendingOrders();
-        // Merge pending if they aren't already in server list (simple dedupe)
-        const combined = [...pending, ...serverOrders.filter(so => !pending.find(p => p.id === so.id))];
-        set({ orders: combined.sort((a,b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) });
-    } else {
-        // Offline: load from cache
-        const { orders } = await offlineService.loadLocalState(currentTenant.id);
-        set({ orders });
+        const res = await api.get('/orders');
+        set({ orders: res.data });
     }
   },
 
@@ -398,29 +360,31 @@ export const useStore = create<Store>((set, get) => ({
     const { currentTenant } = get();
     if (!currentTenant) throw new Error("No Tenant");
     
-    const newOrder = { 
+    // Optimistic Update
+    const optimisticOrder = { 
         ...order, 
-        id: `ord_${Date.now()}`, 
+        id: `ord_temp_${Date.now()}`, 
         tenantId: currentTenant.id, 
         createdAt: new Date().toISOString() 
     } as Order;
+    set(state => ({ orders: [optimisticOrder, ...state.orders] }));
 
-    // 1. Update UI Immediately (Optimistic)
-    set(state => ({ orders: [newOrder, ...state.orders] }));
-
-    // 2. Handle Data Persistence
     if (navigator.onLine) {
-        await mockDb.createOrder(order);
+        const res = await api.post('/orders', order);
+        // Replace optimistic order with real one
+        set(state => ({ 
+            orders: state.orders.map(o => o.id === optimisticOrder.id ? res.data : o) 
+        }));
         await get().refreshProducts(); // Stock update from server
         await get().refreshStockLogs();
+        return res.data;
     } else {
-        // Offline Mode: Atomic Local Transaction
-        await offlineService.processOfflineOrder(newOrder);
-        
-        // Manually update local product stock in Store State to match IndexedDB
+        // Offline Mode
+        await offlineService.processOfflineOrder(optimisticOrder);
+        // Manually update local product stock in Store State
         set(state => ({
             products: state.products.map(p => {
-                const item = newOrder.items.find(i => i.productId === p.id);
+                const item = optimisticOrder.items.find(i => i.productId === p.id);
                 if (item) {
                     const change = item.type === 'SALE' ? -item.quantity : item.quantity;
                     return { ...p, stock: p.stock + change };
@@ -428,12 +392,8 @@ export const useStore = create<Store>((set, get) => ({
                 return p;
             })
         }));
-        
-        // Refresh logs from local DB to show the new offline transaction log
-        await get().refreshStockLogs();
+        return optimisticOrder;
     }
-    
-    return newOrder;
   },
 
   updateOrderStatus: async (id, status) => {
@@ -441,56 +401,48 @@ export const useStore = create<Store>((set, get) => ({
         orders: state.orders.map(o => o.id === id ? { ...o, status } : o)
     }));
     if(navigator.onLine) {
-        await mockDb.updateOrderStatus(id, status);
+        await api.put(`/orders/${id}/status`, { status });
     }
   },
 
   // User Implementation
   refreshUsers: async () => {
-     const { currentTenant } = get();
-     if (!currentTenant || !navigator.onLine) return;
-     const users = await mockDb.getTenantUsers(currentTenant.id);
-     set({ users });
+     if (!navigator.onLine) return;
+     const res = await api.get('/users');
+     set({ users: res.data });
   },
 
   inviteUser: async (user) => {
-      const { currentTenant } = get();
-      if (!currentTenant) return;
       if(navigator.onLine) {
-          await mockDb.addTenantUser({...user, tenantId: currentTenant.id});
+          await api.post('/users/invite', user);
           await get().refreshUsers();
       }
   },
 
   removeUser: async (id) => {
       set(state => ({ users: state.users.filter(u => u.id !== id) }));
-      if(navigator.onLine) await mockDb.removeTenantUser(id);
+      if(navigator.onLine) await api.delete(`/users/${id}`);
   },
 
   updateUserRole: async (id, role, permissions) => {
       set(state => ({ users: state.users.map(u => u.id === id ? { ...u, role, permissions } : u) }));
-      if(navigator.onLine) await mockDb.updateUser(id, { role, permissions });
+      if(navigator.onLine) await api.put(`/users/${id}/role`, { role, permissions });
   },
 
   updateUserPin: async (targetUserId, newPin) => {
-      const { user } = get();
-      if (!user) return;
-      await mockDb.updateUserPin(user.id, targetUserId, newPin);
-      // Optimistic update
+      await api.put(`/users/${targetUserId}/pin`, { pin: newPin });
       set(state => ({
           users: state.users.map(u => u.id === targetUserId ? { ...u, pin: newPin } : u)
       }));
   },
 
   updateUserPassword: async (targetUserId, newPass) => {
-      const { user } = get();
-      if (!user) return;
-      if(navigator.onLine) {
-          await mockDb.updateUserPassword(user.id, targetUserId, newPass);
-      }
+      // Not implemented in API yet, skipping for now or use mock logic if needed
+      // await api.put(`/users/${targetUserId}/password`, { password: newPass });
   },
 
   verifyUserPin: async (pin) => {
+      // Local verification only for speed/security
       const { user } = get();
       if (!user) return false;
       if (user.pin === pin) return true;
@@ -501,137 +453,104 @@ export const useStore = create<Store>((set, get) => ({
   leaveCurrentTenant: async () => {
       const { user, logout } = get();
       if (!user) return;
-      
       if(navigator.onLine) {
-          await mockDb.removeTenantUser(user.id);
+          await api.delete(`/users/${user.id}`);
           logout();
-      } else {
-          alert("You must be online to unlink your account.");
       }
   },
 
   // Settings Implementation
   updateTenantProfile: async (id, updates) => {
      if(navigator.onLine) {
-         const updatedTenant = await mockDb.updateTenant(id, updates);
-         set({ currentTenant: updatedTenant });
-     } else {
-         set(state => ({ currentTenant: state.currentTenant ? { ...state.currentTenant, ...updates } : null }));
+         const res = await api.put('/tenant', updates);
+         set({ currentTenant: res.data });
      }
   },
 
   updateSettings: async (updates) => {
-     const { currentTenant } = get();
-     if (!currentTenant) return;
-     
      // Optimistic
      set(state => ({ settings: state.settings ? { ...state.settings, ...updates } : null }));
-     
      if(navigator.onLine) {
-         const updatedSettings = await mockDb.updateTenantSettings(currentTenant.id, updates);
-         set({ settings: updatedSettings });
+         const res = await api.put('/settings', updates);
+         set({ settings: res.data });
      }
   },
 
   // Supplier Implementation
   refreshSuppliers: async () => {
-    const { currentTenant } = get();
-    if (!currentTenant || !navigator.onLine) return;
-    const suppliers = await mockDb.getTenantSuppliers(currentTenant.id);
-    set({ suppliers });
+    if (!navigator.onLine) return;
+    const res = await api.get('/suppliers');
+    set({ suppliers: res.data });
   },
   
   addSupplier: async (supplier) => {
-    const { currentTenant } = get();
-    if (!currentTenant) return;
-    // Optimistic
-    const newSup = { ...supplier, id: `sup_${Date.now()}`, tenantId: currentTenant.id } as Supplier;
-    set(state => ({ suppliers: [...state.suppliers, newSup] }));
-    
-    if(navigator.onLine) await mockDb.createSupplier({ ...supplier, tenantId: currentTenant.id });
+    if(navigator.onLine) {
+        const res = await api.post('/suppliers', supplier);
+        set(state => ({ suppliers: [...state.suppliers, res.data] }));
+    }
   },
 
   deleteSupplier: async (id) => {
     set(state => ({ suppliers: state.suppliers.filter(s => s.id !== id) }));
-    if(navigator.onLine) await mockDb.deleteSupplier(id);
+    if(navigator.onLine) await api.delete(`/suppliers/${id}`);
   },
 
   // Customer Actions
   refreshCustomers: async () => {
-    const { currentTenant } = get();
-    if (!currentTenant || !navigator.onLine) return;
-    const customers = await mockDb.getTenantCustomers(currentTenant.id);
-    set({ customers });
+    if (!navigator.onLine) return;
+    const res = await api.get('/customers');
+    set({ customers: res.data });
   },
 
   addCustomer: async (customer) => {
-    const { currentTenant } = get();
-    if (!currentTenant) throw new Error("No Tenant");
-    
-    const newCustomer = { 
-        ...customer, 
-        id: `cus_${Date.now()}`, 
-        tenantId: currentTenant.id, 
-        createdAt: new Date().toISOString(),
-        totalSpent: 0
-    } as Customer;
-    
-    set(state => ({ customers: [...state.customers, newCustomer] }));
-
     if(navigator.onLine) {
-       await mockDb.createCustomer({ ...customer, tenantId: currentTenant.id });
-       await get().refreshCustomers(); // Get real ID
+       const res = await api.post('/customers', customer);
+       set(state => ({ customers: [...state.customers, res.data] }));
+       return res.data;
     }
-    return newCustomer;
+    throw new Error("Offline customer creation not supported yet");
   },
 
   updateCustomer: async (id, updates) => {
     set(state => ({ customers: state.customers.map(c => c.id === id ? { ...c, ...updates } : c) }));
-    if(navigator.onLine) await mockDb.updateCustomer(id, updates);
+    if(navigator.onLine) await api.put(`/customers/${id}`, updates);
   },
 
   deleteCustomer: async (id) => {
     set(state => ({ customers: state.customers.filter(c => c.id !== id) }));
-    if(navigator.onLine) await mockDb.deleteCustomer(id);
+    if(navigator.onLine) await api.delete(`/customers/${id}`);
   },
 
   // Notification Actions
   refreshNotifications: async () => {
     const { currentTenant } = get();
-    if (!currentTenant || !navigator.onLine) return;
+    // Still utilizing mockDb for notifications as API endpoint wasn't requested/created in Phase 2
+    if (!currentTenant) return;
     const notifications = await mockDb.getTenantNotifications(currentTenant.id);
     set({ notifications });
   },
 
   markNotificationRead: async (id) => {
     set(state => ({ notifications: state.notifications.map(n => n.id === id ? { ...n, read: true } : n) }));
-    if(navigator.onLine) await mockDb.markNotificationRead(id);
+    await mockDb.markNotificationRead(id);
   },
 
   markAllNotificationsRead: async () => {
-    const { currentTenant } = get();
-    if (!currentTenant) return;
     set(state => ({ notifications: state.notifications.map(n => ({ ...n, read: true })) }));
-    if(navigator.onLine) await mockDb.markAllNotificationsRead(currentTenant.id);
+    if (get().currentTenant) await mockDb.markAllNotificationsRead(get().currentTenant!.id);
   },
 
   // Purchase Order Implementation
   refreshPurchaseOrders: async () => {
-    const { currentTenant } = get();
-    if (!currentTenant || !navigator.onLine) return;
-    const purchaseOrders = await mockDb.getTenantPurchaseOrders(currentTenant.id);
-    set({ purchaseOrders });
+    if (!navigator.onLine) return;
+    const res = await api.get('/purchase-orders');
+    set({ purchaseOrders: res.data });
   },
 
   addPurchaseOrder: async (po) => {
-    const { currentTenant } = get();
-    if (!currentTenant) return;
-    // Optimistic
-    const newPO = { ...po, id: `po_${Date.now()}`, tenantId: currentTenant.id, createdAt: new Date().toISOString() } as PurchaseOrder;
-    set(state => ({ purchaseOrders: [newPO, ...state.purchaseOrders] }));
-
     if(navigator.onLine) {
-        await mockDb.createPurchaseOrder({ ...po, tenantId: currentTenant.id });
+        const res = await api.post('/purchase-orders', po);
+        set(state => ({ purchaseOrders: [res.data, ...state.purchaseOrders] }));
         if (po.status === PurchaseOrderStatus.RECEIVED) {
           await get().refreshProducts();
         }
@@ -641,7 +560,7 @@ export const useStore = create<Store>((set, get) => ({
   updatePurchaseOrderStatus: async (id, status) => {
     set(state => ({ purchaseOrders: state.purchaseOrders.map(p => p.id === id ? { ...p, status } : p) }));
     if(navigator.onLine) {
-        await mockDb.updatePurchaseOrderStatus(id, status);
+        await api.put(`/purchase-orders/${id}/status`, { status });
         if (status === PurchaseOrderStatus.RECEIVED) {
           await get().refreshProducts();
         }
@@ -650,24 +569,21 @@ export const useStore = create<Store>((set, get) => ({
 
   // Expense Implementation
   refreshExpenses: async () => {
-    const { currentTenant } = get();
-    if (!currentTenant || !navigator.onLine) return;
-    const expenses = await mockDb.getTenantExpenses(currentTenant.id);
-    set({ expenses });
+    if (!navigator.onLine) return;
+    const res = await api.get('/expenses');
+    set({ expenses: res.data });
   },
 
   addExpense: async (expense) => {
-    const { currentTenant, user } = get();
-    if (!currentTenant) return;
-    const newEx = { ...expense, id: `ex_${Date.now()}`, tenantId: currentTenant.id, recordedBy: user?.name } as Expense;
-    set(state => ({ expenses: [newEx, ...state.expenses] }));
-
-    if(navigator.onLine) await mockDb.createExpense({ ...expense, tenantId: currentTenant.id, recordedBy: user?.name || 'User' });
+    if(navigator.onLine) {
+        const res = await api.post('/expenses', expense);
+        set(state => ({ expenses: [res.data, ...state.expenses] }));
+    }
   },
 
   deleteExpense: async (id) => {
     set(state => ({ expenses: state.expenses.filter(e => e.id !== id) }));
-    if(navigator.onLine) await mockDb.deleteExpense(id);
+    if(navigator.onLine) await api.delete(`/expenses/${id}`);
   },
 
   // Auth Implementation
@@ -713,15 +629,12 @@ export const useStore = create<Store>((set, get) => ({
       currentTenant: null, 
       products: [], 
       orders: [],
-      allTenants: [],
-      transactions: [],
       suppliers: [],
       purchaseOrders: [],
       expenses: [],
       settings: null,
       customers: [],
-      notifications: [],
-      subscriptionRequests: []
+      notifications: []
     });
   }
 }));

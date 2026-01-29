@@ -3,13 +3,13 @@ import bcrypt from 'bcryptjs';
 import { AuthRequest } from '../middleware/authMiddleware';
 import { User, Role } from '../models/Schemas';
 
-export const getUsers = async (req: AuthRequest, res: Response) => {
+export const getUsers = async (req: any, res: any) => {
   // Return users for this tenant, excluding passwords
   const users = await User.find({ tenantId: req.user.tenantId }).select('-password');
   res.json(users);
 };
 
-export const inviteUser = async (req: AuthRequest, res: Response) => {
+export const inviteUser = async (req: any, res: any) => {
   const { name, email, password, role, permissions } = req.body;
 
   try {
@@ -41,7 +41,7 @@ export const inviteUser = async (req: AuthRequest, res: Response) => {
   }
 };
 
-export const deleteUser = async (req: AuthRequest, res: Response) => {
+export const deleteUser = async (req: any, res: any) => {
   try {
     await User.findOneAndDelete({ _id: req.params.id, tenantId: req.user.tenantId });
     res.json({ message: 'User removed' });
@@ -50,7 +50,7 @@ export const deleteUser = async (req: AuthRequest, res: Response) => {
   }
 };
 
-export const updateUserRole = async (req: AuthRequest, res: Response) => {
+export const updateUserRole = async (req: any, res: any) => {
   try {
     const { role, permissions } = req.body;
     const user = await User.findOneAndUpdate(
@@ -64,7 +64,7 @@ export const updateUserRole = async (req: AuthRequest, res: Response) => {
   }
 };
 
-export const updateUserPin = async (req: AuthRequest, res: Response) => {
+export const updateUserPin = async (req: any, res: any) => {
   try {
     const { pin } = req.body;
     // In a real app, encrypt the PIN
