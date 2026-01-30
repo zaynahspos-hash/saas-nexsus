@@ -188,7 +188,11 @@ export const UsersPage: React.FC = () => {
                                 {u.name}
                                 {currentUser?.id === u.id && <span className="ml-2 text-[10px] bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-600">You</span>}
                             </h3>
-                            {isSuperUser && <Lock size={12} className="text-amber-500" title="Super Admin Protected" />}
+                            {isSuperUser && (
+                                <span title="Super Admin Protected">
+                                    <Lock size={12} className="text-amber-500" />
+                                </span>
+                            )}
                         </div>
                         <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold border ${roleColors[u.role] || roleColors[Role.USER]}`}>
                             <Shield size={10} /> {u.role.replace('_', ' ')}

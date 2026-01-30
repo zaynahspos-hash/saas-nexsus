@@ -26,7 +26,7 @@ import {
   Lock,
   Percent
 } from 'lucide-react';
-import { Order, OrderStatus, Role } from '../types';
+import { Order, OrderStatus, Role, Product } from '../types';
 
 export const POSPage: React.FC = () => {
   const { products, currentTenant, settings, customers, users, addOrder, addCustomer, user: currentUser, verifyUserPin } = useStore();
@@ -85,11 +85,13 @@ export const POSPage: React.FC = () => {
   const categories: string[] = ['All', ...Array.from(new Set(products.map(p => p.category)))];
 
   const handleScan = (decodedText: string) => {
-    const product = products.find(p => p.sku === decodedText || p.id === decodedText);
+    // Explicitly casting decodedText to string to avoid type issues if it's inferred as unknown
+    const text = String(decodedText);
+    const product = products.find((p: Product) => p.sku === text || p.id === text);
     if (product) {
       cart.addItem(product);
     } else {
-      alert(`Product not found: ${decodedText}`);
+      alert(`Product not found: ${text}`);
     }
   };
 
