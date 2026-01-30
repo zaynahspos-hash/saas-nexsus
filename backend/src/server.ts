@@ -1,4 +1,4 @@
-import express, { Request, Response } from 'express';
+import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import helmet from 'helmet';
@@ -18,14 +18,21 @@ configureCloudinary();
 const app = express();
 
 // Middleware
-app.use(helmet() as any);
+app.use(helmet());
 
 // Dynamic CORS Configuration
 const allowedOrigins = [
   'http://localhost:5173',
-  'http://localhost:3000',
-  process.env.FRONTEND_URL || ''
+  'http://localhost:3000'
 ];
+
+// Add Production Frontend URL if available
+if (process.env.FRONTEND_URL) {
+  // Remove trailing slash if present to ensure exact match
+  const productionUrl = process.env.FRONTEND_URL.replace(/\/$/, "");
+  allowedOrigins.push(productionUrl);
+  allowedOrigins.push(`${productionUrl}/`); // Allow with trailing slash just in case
+}
 
 app.use(cors({
     origin: (origin, callback) => {
@@ -33,36 +40,40 @@ app.use(cors({
       if (!origin) return callback(null, true);
       
       // Check if origin is allowed
-      if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
+      if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV !== 'production') {
         callback(null, true);
       } else {
-        // In production, you might want to be strict, but for debugging Vercel:
-        // callback(new Error('Not allowed by CORS'));
-        // Fallback to allowing Vercel preview URLs usually ending in .vercel.app
-        if (origin.endsWith('.vercel.app')) {
-           callback(null, true);
-        } else {
-           console.log('Blocked Origin:', origin);
-           callback(null, true); // Temporarily allow all for troubleshooting white screen
-        }
+        // In production, log the blocked origin for debugging but block it
+        console.warn(`[CORS] Blocked request from: ${origin}`);
+        // For Vercel Preview Deployments (dynamic URLs), you might want to uncomment the line below:
+        // if (origin.endsWith('.vercel.app')) return callback(null, true);
+        
+        callback(new Error('Not allowed by CORS'));
       }
     },
-    credentials: true
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-app.use(express.json() as any);
-app.use(express.urlencoded({ extended: false }) as any);
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
 
 // Routes
 app.get('/', (req: any, res: any) => {
-    res.send('SaaS Nexus API is running');
+    res.status(200).send('SaaS Nexus API is running');
 });
 
-app.use('/api', apiRoutes as any);
+app.get('/health', (req: any, res: any) => {
+    res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+app.use('/api', apiRoutes);
 
 // Error Handler
 app.use((err: any, req: any, res: any, next: any) => {
-    const statusCode = res.statusCode ? res.statusCode : 500;
+    console.error(err.stack);
+    const statusCode = res.statusCode === 200 ? 500 : res.statusCode;
     res.status(statusCode);
     res.json({
         message: err.message,
@@ -72,4 +83,4 @@ app.use((err: any, req: any, res: any, next: any) => {
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));

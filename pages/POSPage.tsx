@@ -16,7 +16,7 @@ import {
   WifiOff, 
   User,
   X, 
-  ArrowLeft,
+  ArrowLeft, 
   RotateCcw,
   UserPlus,
   UserCheck,
@@ -82,7 +82,7 @@ export const POSPage: React.FC = () => {
   );
 
   const salesStaff = users.filter(u => u.role === Role.SALESMAN || u.role === Role.CASHIER || u.role === Role.MANAGER || u.role === Role.ADMIN);
-  const categories = ['All', ...Array.from(new Set(products.map(p => p.category)))];
+  const categories: string[] = ['All', ...Array.from(new Set(products.map(p => p.category)))];
 
   const handleScan = (decodedText: string) => {
     const product = products.find(p => p.sku === decodedText || p.id === decodedText);
