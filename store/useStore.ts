@@ -170,54 +170,71 @@ export const useStore = create<Store>((set, get) => ({
 
       // If Online, fetch fresh data from Backend API
       if (navigator.onLine) {
-        // Parallel data fetching from Real API
-        const [
-            productsRes, ordersRes, usersRes, categoriesRes, stockLogsRes, 
-            suppliersRes, purchaseOrdersRes, expensesRes, settingsRes, customersRes
-        ] = await Promise.all([
-          api.get('/products'),
-          api.get('/orders'),
-          api.get('/users'),
-          api.get('/categories'),
-          api.get('/stock-logs'),
-          api.get('/suppliers'),
-          api.get('/purchase-orders'),
-          api.get('/expenses'),
-          api.get('/settings'),
-          api.get('/customers')
-        ]);
+        try {
+            // Parallel data fetching from Real API
+            const [
+                productsRes, ordersRes, usersRes, categoriesRes, stockLogsRes, 
+                suppliersRes, purchaseOrdersRes, expensesRes, settingsRes, customersRes
+            ] = await Promise.all([
+              api.get('/products'),
+              api.get('/orders'),
+              api.get('/users'),
+              api.get('/categories'),
+              api.get('/stock-logs'),
+              api.get('/suppliers'),
+              api.get('/purchase-orders'),
+              api.get('/expenses'),
+              api.get('/settings'),
+              api.get('/customers')
+            ]);
 
-        const products = productsRes.data;
-        const orders = ordersRes.data;
-        const users = usersRes.data;
-        const categories = categoriesRes.data;
-        const stockLogs = stockLogsRes.data;
-        const suppliers = suppliersRes.data;
-        const purchaseOrders = purchaseOrdersRes.data;
-        const expenses = expensesRes.data;
-        const settings = settingsRes.data;
-        const customers = customersRes.data;
-        
-        // Mock data for things not yet on backend
-        const notifications = await mockDb.getTenantNotifications(currentTenant.id);
-        const plans = await mockDb.getPlans();
+            const products = productsRes.data;
+            const orders = ordersRes.data;
+            const users = usersRes.data;
+            const categories = categoriesRes.data;
+            const stockLogs = stockLogsRes.data;
+            const suppliers = suppliersRes.data;
+            const purchaseOrders = purchaseOrdersRes.data;
+            const expenses = expensesRes.data;
+            const settings = settingsRes.data;
+            const customers = customersRes.data;
+            
+            // Mock data for things not yet on backend
+            const notifications = await mockDb.getTenantNotifications(currentTenant.id);
+            const plans = await mockDb.getPlans();
 
-        // Update Store
-        set({
-          products, orders, users, categories, stockLogs, suppliers,
-          purchaseOrders, expenses, settings, customers, notifications, plans,
-          tenants: [currentTenant], // For now, single tenant view
-          isLoading: false
-        });
+            // Update Store
+            set({
+              products, orders, users, categories, stockLogs, suppliers,
+              purchaseOrders, expenses, settings, customers, notifications, plans,
+              tenants: [currentTenant], // For now, single tenant view
+              isLoading: false
+            });
 
-        // Update Local Cache with fresh server data
-        await offlineService.cacheAllData({
-          products, orders, users, categories, stockLogs, suppliers,
-          purchaseOrders, expenses, settings, customers, notifications
-        });
+            // Update Local Cache with fresh server data
+            await offlineService.cacheAllData({
+              products, orders, users, categories, stockLogs, suppliers,
+              purchaseOrders, expenses, settings, customers, notifications
+            });
 
-        // Check for pending items to sync
-        await get().syncOfflineData();
+            // Check for pending items to sync
+            await get().syncOfflineData();
+        } catch (apiError) {
+            console.warn("API Fetch failed, using local/mock data:", apiError);
+            // If API fails, we rely on what we loaded from Dexie or MockDB
+            // If Local Dexie was empty, let's load default MockDB data to prevent empty state
+            if (get().products.length === 0) {
+               const mockProducts = await mockDb.getTenantProducts(currentTenant.id);
+               const mockOrders = await mockDb.getTenantOrders(currentTenant.id);
+               set({ 
+                   products: mockProducts, 
+                   orders: mockOrders,
+                   isLoading: false 
+               });
+            } else {
+               set({ isLoading: false });
+            }
+        }
 
       } else {
         set({ isLoading: false }); // Ensure loading stops if offline
@@ -234,7 +251,7 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   loadAdminData: async () => {
-    if (!navigator.onLine) return; // Admin data typically live only
+    // Admin data typically live only, but use mockDb if offline/error
     set({ isLoading: true });
     try {
       const [allTenants, transactions, plans, subscriptionRequests] = await Promise.all([
@@ -370,30 +387,35 @@ export const useStore = create<Store>((set, get) => ({
     set(state => ({ orders: [optimisticOrder, ...state.orders] }));
 
     if (navigator.onLine) {
-        const res = await api.post('/orders', order);
-        // Replace optimistic order with real one
-        set(state => ({ 
-            orders: state.orders.map(o => o.id === optimisticOrder.id ? res.data : o) 
-        }));
-        await get().refreshProducts(); // Stock update from server
-        await get().refreshStockLogs();
-        return res.data;
-    } else {
-        // Offline Mode
-        await offlineService.processOfflineOrder(optimisticOrder);
-        // Manually update local product stock in Store State
-        set(state => ({
-            products: state.products.map(p => {
-                const item = optimisticOrder.items.find(i => i.productId === p.id);
-                if (item) {
-                    const change = item.type === 'SALE' ? -item.quantity : item.quantity;
-                    return { ...p, stock: p.stock + change };
-                }
-                return p;
-            })
-        }));
-        return optimisticOrder;
-    }
+        try {
+            const res = await api.post('/orders', order);
+            // Replace optimistic order with real one
+            set(state => ({ 
+                orders: state.orders.map(o => o.id === optimisticOrder.id ? res.data : o) 
+            }));
+            await get().refreshProducts(); // Stock update from server
+            await get().refreshStockLogs();
+            return res.data;
+        } catch (e) {
+            console.error("Order sync failed, saving offline", e);
+            // Fallback to offline logic below if API fails
+        }
+    } 
+    
+    // Offline Mode or Fallback
+    await offlineService.processOfflineOrder(optimisticOrder);
+    // Manually update local product stock in Store State
+    set(state => ({
+        products: state.products.map(p => {
+            const item = optimisticOrder.items.find(i => i.productId === p.id);
+            if (item) {
+                const change = item.type === 'SALE' ? -item.quantity : item.quantity;
+                return { ...p, stock: p.stock + change };
+            }
+            return p;
+        })
+    }));
+    return optimisticOrder;
   },
 
   updateOrderStatus: async (id, status) => {
@@ -628,13 +650,13 @@ export const useStore = create<Store>((set, get) => ({
       user: null, 
       currentTenant: null, 
       products: [], 
-      orders: [],
-      suppliers: [],
-      purchaseOrders: [],
-      expenses: [],
-      settings: null,
-      customers: [],
-      notifications: []
+      orders: [], 
+      suppliers: [], 
+      purchaseOrders: [], 
+      expenses: [], 
+      settings: null, 
+      customers: [], 
+      notifications: [] 
     });
   }
 }));

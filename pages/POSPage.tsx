@@ -82,16 +82,14 @@ export const POSPage: React.FC = () => {
   );
 
   const salesStaff = users.filter(u => u.role === Role.SALESMAN || u.role === Role.CASHIER || u.role === Role.MANAGER || u.role === Role.ADMIN);
-  const categories: string[] = ['All', ...Array.from(new Set(products.map(p => p.category)))];
+  const categories: string[] = ['All', ...(Array.from(new Set(products.map((p) => p.category))) as string[])];
 
   const handleScan = (decodedText: string) => {
-    // Explicitly casting decodedText to string to avoid type issues if it's inferred as unknown
-    const text = String(decodedText);
-    const product = products.find((p: Product) => p.sku === text || p.id === text);
+    const product = products.find((p: Product) => p.sku === decodedText || p.id === decodedText);
     if (product) {
       cart.addItem(product);
     } else {
-      alert(`Product not found: ${text}`);
+      alert(`Product not found: ${decodedText}`);
     }
   };
 

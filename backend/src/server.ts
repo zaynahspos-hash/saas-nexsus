@@ -32,6 +32,7 @@ if (process.env.FRONTEND_URL) {
   const productionUrl = process.env.FRONTEND_URL.replace(/\/$/, "");
   allowedOrigins.push(productionUrl);
   allowedOrigins.push(`${productionUrl}/`); // Allow with trailing slash just in case
+  console.log(`🌍 CORS Allowed Origin added: ${productionUrl}`);
 }
 
 app.use(cors({
@@ -43,23 +44,19 @@ app.use(cors({
       if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV !== 'production') {
         callback(null, true);
       } else {
-        // In production, log the blocked origin for debugging but block it
         console.warn(`[CORS] Blocked request from: ${origin}`);
-        // For Vercel Preview Deployments (dynamic URLs), you might want to uncomment the line below:
-        // if (origin.endsWith('.vercel.app')) return callback(null, true);
-        
         callback(new Error('Not allowed by CORS'));
       }
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept']
 }));
 
 app.use(express.json() as any);
 app.use(express.urlencoded({ extended: false }) as any);
 
-// Routes
+// Health Check
 app.get('/', (req: any, res: any) => {
     res.status(200).send('SaaS Nexus API is running');
 });
@@ -68,6 +65,7 @@ app.get('/health', (req: any, res: any) => {
     res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// API Routes
 app.use('/api', apiRoutes);
 
 // Error Handler
@@ -83,4 +81,4 @@ app.use((err: any, req: any, res: any, next: any) => {
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Server running on port ${PORT}`));
